@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Minecraft Gravestone</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #04071c; /* Night sky color */
+            font-family: 'Press Start 2P', cursive;
+            user-select: none;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            pointer-events: none;
+            z-index: 10;
+            text-shadow: 2px 2px 0 #000;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 20px;
+            text-shadow: 2px 2px 0 #000;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading">Dunya olusuyor...</div>
+    <div id="ui-layer">
+    </div>
+
+    <script>
+        // Wait for font to load before creating textures
+        document.fonts.ready.then(init);
+
+        let scene, camera, renderer, controls;
+        let graveGroup;
+
+        function init() {
+            document.getElementById('loading').style.display = 'none';
+
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+            // Heavier, linear fog. Starts at 3 units away, fully dense at 15.
+            scene.fog = new THREE.Fog(0x04071c, 3, 15); 
+
+            // 2. Camera Setup
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 4, 8);
+
+            // 3. Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: false }); // False for pixelated look
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // 4. Controls Setup
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
+            controls.minDistance = 2;
+            controls.maxDistance = 20;
+            controls.target.set(0, 1.5, 0);
+
+            // 5. Lighting Setup
+            const ambientLight = new THREE.AmbientLight(0x404060, 1.5); // Bluish night ambient
+            scene.add(ambientLight);
+
+            const moonLight = new THREE.DirectionalLight(0xaaccff, 1);
+            moonLight.position.set(-10, 20, -10);
+            moonLight.castShadow = true;
+            moonLight.shadow.mapSize.width = 1024;
+            moonLight.shadow.mapSize.height = 1024;
+            moonLight.shadow.camera.near = 0.5;
+            moonLight.shadow.camera.far = 50;
+            moonLight.shadow.camera.left = -10;
+            moonLight.shadow.camera.right = 10;
+            moonLight.shadow.camera.top = 10;
+            moonLight.shadow.camera.bottom = -10;
+            scene.add(moonLight);
+
+            // 6. Generate Environment
+            createSky();
+            createGround();
+            createGrave();
+            createFlowers();
+
+            // 7. Event Listeners
+            window.addEventListener('resize', onWindowResize);
+
+            // 8. Start Loop
+            animate();
+        }
+
+        // --- Texture Generators ---
+        function createPixelTexture(width, height, r, g, b, variance) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height; y++) {
+                    const noise = (Math.random() - 0.5) * variance;
+                    ctx.fillStyle = `rgb(${Math.max(0, Math.min(255, r + noise))}, 
+                                         ${Math.max(0, Math.min(255, g + noise))}, 
+                                         ${Math.max(0, Math.min(255, b + noise))})`;
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            return tex;
+        }
+
+		function createSignTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            // Wood Background
+            ctx.fillStyle = '#815e37';
+            ctx.fillRect(0, 0, 256, 128);
+            
+            // Wood borders
+            ctx.fillStyle = '#5c4021';
+            ctx.fillRect(0, 0, 256, 10);
+            ctx.fillRect(0, 118, 256, 10);
+            ctx.fillRect(0, 0, 10, 128);
+            ctx.fillRect(246, 0, 10, 128);
+
+            // 1. Original Engraved Text
+            ctx.fillStyle = '#000000';
+            ctx.textAlign = 'center';
+            
+            ctx.font = '12px "Press Start 2P"';
+            ctx.fillText("HUZUR ICINDE YAT.", 128, 35);
+            
+            ctx.font = '16px "Press Start 2P"';
+            ctx.fillText("VAELEN", 128, 60);
+            
+            ctx.font = '12px "Press Start 2P"';
+            ctx.fillText("HARUSPEX", 128, 85);
+
+            // 2. The Red Cross over HARUSPEX
+            ctx.strokeStyle = '#cc0000'; // Blood red
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            // Draw top-left to bottom-right
+            ctx.moveTo(70, 72); 
+            ctx.lineTo(186, 92);
+            // Draw bottom-left to top-right
+            ctx.moveTo(70, 92); 
+            ctx.lineTo(186, 72);
+            ctx.stroke();
+
+            // 3. Vandalized Handwritten Text "Zebul"
+            ctx.save();
+            ctx.translate(140, 110); // Position it slightly to the right at the bottom
+            ctx.rotate(-0.15); // Tilt it slightly counter-clockwise for realism
+            ctx.font = 'bold 20px "Brush Script MT", "Comic Sans MS", cursive';
+            ctx.fillStyle = '#0a0a0a'; // Dark ink color
+            ctx.fillText("Zebul", 0, 0);
+            ctx.restore();
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            return tex;
+        }
+
+        // --- Object Creators ---
+        function createSky() {
+            // Stars
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsCount = 500;
+            const posArray = new Float32Array(starsCount * 3);
+            
+            for(let i=0; i < starsCount * 3; i+=3) {
+                posArray[i] = (Math.random() - 0.5) * 100;
+                posArray[i+1] = Math.random() * 50 + 10;
+                posArray[i+2] = (Math.random() - 0.5) * 100;
+            }
+            
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const starsMaterial = new THREE.PointsMaterial({
+                size: 0.2,
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.8
+            });
+            const starMesh = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starMesh);
+
+            // Moon
+            const moonGeo = new THREE.BoxGeometry(4, 4, 0.1);
+            const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffee });
+            const moon = new THREE.Mesh(moonGeo, moonMat);
+            moon.position.set(-20, 30, -30);
+            moon.lookAt(0,0,0);
+            scene.add(moon);
+        }
+
+        function createGround() {
+            const grassTex = createPixelTexture(16, 16, 92, 159, 61, 30);
+            grassTex.wrapS = THREE.RepeatWrapping;
+            grassTex.wrapT = THREE.RepeatWrapping;
+            grassTex.repeat.set(10, 10);
+
+            const dirtTex = createPixelTexture(16, 16, 109, 78, 51, 20);
+            dirtTex.wrapS = THREE.RepeatWrapping;
+            dirtTex.wrapT = THREE.RepeatWrapping;
+            dirtTex.repeat.set(10, 1);
+
+            const materials = [
+                new THREE.MeshStandardMaterial({ map: dirtTex }), // right
+                new THREE.MeshStandardMaterial({ map: dirtTex }), // left
+                new THREE.MeshStandardMaterial({ map: grassTex }), // top
+                new THREE.MeshStandardMaterial({ map: dirtTex }), // bottom
+                new THREE.MeshStandardMaterial({ map: dirtTex }), // front
+                new THREE.MeshStandardMaterial({ map: dirtTex }), // back
+            ];
+
+            const geometry = new THREE.BoxGeometry(40, 2, 40);
+            const ground = new THREE.Mesh(geometry, materials);
+            ground.position.y = -1; // Top is at y=0
+            ground.receiveShadow = true;
+            scene.add(ground);
+        }
+
+        function createGrave() {
+            graveGroup = new THREE.Group();
+            
+            const cobbleTex = createPixelTexture(16, 16, 107, 107, 107, 40);
+            const cobbleMat = new THREE.MeshStandardMaterial({ map: cobbleTex });
+
+            // Base
+            const baseGeo = new THREE.BoxGeometry(2.4, 0.4, 1.4);
+            const base = new THREE.Mesh(baseGeo, cobbleMat);
+            base.position.y = 0.2;
+            base.castShadow = true;
+            base.receiveShadow = true;
+            graveGroup.add(base);
+
+            // Body
+            const bodyGeo = new THREE.BoxGeometry(1.6, 2.2, 0.6);
+            const body = new THREE.Mesh(bodyGeo, cobbleMat);
+            body.position.y = 1.5;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            graveGroup.add(body);
+
+            // Top
+            const topGeo = new THREE.BoxGeometry(1.6, 0.2, 0.6);
+            const top = new THREE.Mesh(topGeo, cobbleMat);
+            top.position.y = 2.7;
+            top.castShadow = true;
+            graveGroup.add(top);
+
+            // Sign
+            const signTex = createSignTexture();
+            const signMat = new THREE.MeshStandardMaterial({ map: signTex });
+            const signGeo = new THREE.BoxGeometry(1.6, 0.8, 0.1);
+            const sign = new THREE.Mesh(signGeo, signMat);
+            sign.position.set(0, 1.8, 0.47); // Moved outward to prevent z-fighting with the post
+            sign.castShadow = true;
+            graveGroup.add(sign);
+
+            // Sign Post
+            const woodTex = createPixelTexture(4, 4, 92, 64, 33, 10);
+            const woodMat = new THREE.MeshStandardMaterial({ map: woodTex });
+            const postGeo = new THREE.BoxGeometry(0.2, 1.0, 0.1);
+            const post = new THREE.Mesh(postGeo, woodMat);
+            post.position.set(0, 1.3, 0.36); // Moved outward to prevent z-fighting with the stone
+            graveGroup.add(post);
+
+            scene.add(graveGroup);
+        }
+
+        function createFlowers() {
+            const createFlower = (x, z, color) => {
+                const group = new THREE.Group();
+                
+                // Stem
+                const stemMat = new THREE.MeshStandardMaterial({ color: 0x00aa00 });
+                const stemGeo = new THREE.BoxGeometry(0.05, 0.4, 0.05);
+                const stem = new THREE.Mesh(stemGeo, stemMat);
+                stem.position.y = 0.2;
+                group.add(stem);
+
+                // Head
+                const headMat = new THREE.MeshStandardMaterial({ color: color });
+                const headGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+                const head = new THREE.Mesh(headGeo, headMat);
+                head.position.y = 0.5;
+                group.add(head);
+
+                group.position.set(x, 0, z);
+                
+                // Add tiny random rotation for variation
+                group.rotation.y = Math.random() * Math.PI;
+                
+                scene.add(group);
+            };
+
+            // Red flowers (Poppies)
+            createFlower(-2, -1.5, 0xcc0000);
+            createFlower(-3, 1, 0xcc0000);
+            createFlower(2.5, -0.5, 0xcc0000);
+            
+            // Yellow flowers (Dandelions)
+            createFlower(3, 1.5, 0xcccc00);
+            createFlower(1.5, 2, 0xcccc00);
+            createFlower(-1.5, 2.5, 0xcccc00);
+        }
+
+        // --- Core Loop ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            controls.update();
+            
+            // Slowly rotate stars/moon
+            scene.children.forEach(child => {
+                if (child.type === 'Points') {
+                    child.rotation.y += 0.0002;
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
